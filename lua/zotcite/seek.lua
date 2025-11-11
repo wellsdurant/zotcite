@@ -219,15 +219,20 @@ M.refs = function(key, cb)
                             if e.value.publicationnote and e.value.publicationnote ~= "" then
                                 pub_text = pub_text .. " (" .. e.value.publicationnote .. ")"
                             end
+                            -- Prepend abbreviation to title if present
+                            local title_text = e.value.title or ""
+                            if e.value.abbreviation and e.value.abbreviation ~= "" then
+                                title_text = "(" .. e.value.abbreviation .. ") " .. title_text
+                            end
                             return displayer({
-                                { e.value.title or "", "Title" },
+                                { title_text, "Title" },
                                 { e.value.year or "", "Number" },
                                 { e.value.alastnm or "", "Identifier" },
                                 { e.value.organization or "", "Comment" },
                                 { pub_text, "Include" },
                             })
                         end,
-                        ordinal = entry.display,
+                        ordinal = (entry.abbreviation ~= "" and "(" .. entry.abbreviation .. ") " or "") .. entry.display,
                     }
                 end,
             }),
