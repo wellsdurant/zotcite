@@ -84,15 +84,15 @@ local get_typ_citations = function()
 end
 
 local get_md_citations = function()
-    local kp = "@[0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z]"
+    local kp = "%[.-%]%(zotero://select/library/items/([0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z])%)"
     local lines = vim.api.nvim_buf_get_lines(0, 0, -1, true)
     local ckeys = {}
     for _, v in pairs(lines) do
         local i = 1
         while true do
-            local s, e = v:find(kp, i)
+            local s, e, key = v:find(kp, i)
             if not s or not e then break end
-            table.insert(ckeys, v:sub(s + 1, e))
+            table.insert(ckeys, key)
             i = e + 1
         end
     end

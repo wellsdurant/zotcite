@@ -22,16 +22,41 @@ end
 
 M.print = function(ref)
     local msg = {
-        { ref.value.alastnm, "Identifier" },
+        { ref.value.title, "Title" },
         { " " },
         { ref.value.year, "Number" },
         { " " },
-        { ref.value.title, "Title" },
+        { ref.value.alastnm, "Identifier" },
     }
     vim.schedule(function() vim.api.nvim_echo(msg, false, {}) end)
 end
 
 local format_preview = function(v)
+    local parts = {}
+    local hl = {}
+    local pos = 0
+
+    -- (abbreviation) if present
+    if v.abbreviation and v.abbreviation ~= "" then
+        local abbr_text = "(" .. v.abbreviation .. ") "
+        table.insert(parts, abbr_text)
+        table.insert(hl, { g = "String", s = pos, e = pos + #abbr_text })
+        pos = pos + #abbr_text
+    end
+
+    -- title
+    local title = v.title or "Untitled"
+    table.insert(parts, title .. ", ")
+    table.insert(hl, { g = "Title", s = pos, e = pos + #title })
+    pos = pos + #title + 2
+
+    -- year
+    local year = v.year or "????"
+    table.insert(parts, year .. ", ")
+    table.insert(hl, { g = "Number", s = pos, e = pos + #year })
+    pos = pos + #year + 2
+
+    -- author
     local alist = {}
     local authors
     if v.author then
@@ -44,38 +69,35 @@ local format_preview = function(v)
             authors = table.concat(alist, "; ")
         end
     else
-        authors = "?"
+        authors = "Unknown"
     end
-    local year = v.year or "????"
-    local title = v.title or "????"
+    table.insert(parts, authors)
+    table.insert(hl, { g = "Identifier", s = pos, e = pos + #authors })
+    pos = pos + #authors
+
+    -- (organization) if present
+    if v.organization and v.organization ~= "" then
+        local org_text = " (" .. v.organization .. ")"
+        table.insert(parts, org_text)
+        table.insert(hl, { g = "Comment", s = pos, e = pos + #org_text })
+        pos = pos + #org_text
+    end
+
+    -- publication
     local ptitle = v.publicationTitle or "????"
-    local txt
-    local hl = { { g = "Identifier", s = 0, e = #authors } }
-    table.insert(hl, { g = "Number", s = hl[1].e + 1, e = hl[1].e + 1 + #year })
-    table.insert(hl, { g = "Title", s = hl[2].e + 1, e = hl[2].e + 1 + #title })
-    if v.etype == "journalArticle" then
-        txt = string.format(
-            "%s %s %s. %s.\n\n%s\n",
-            authors,
-            year,
-            title,
-            ptitle,
-            v.abstract or "No abstract available."
-        )
-        table.insert(hl, { g = "Include", s = hl[3].e + 2, e = hl[3].e + 2 + #ptitle })
-    elseif v.etype == "bookSection" then
-        txt = string.format(
-            "%s %s %s. In: %s.\n\n%s\n",
-            authors,
-            year,
-            title,
-            ptitle,
-            v.abstract or ""
-        )
-        table.insert(hl, { g = "Include", s = hl[3].e + 6, e = hl[3].e + 6 + #ptitle })
-    else
-        txt = string.format("%s %s %s.\n\n%s\n", authors, year, title, v.abstract or "")
+    -- Append PublicationNote if present
+    if v.publicationnote and v.publicationnote ~= "" then
+        ptitle = ptitle .. " (" .. v.publicationnote .. ")"
     end
+    local pub_text = ", " .. ptitle
+    table.insert(parts, pub_text)
+    table.insert(hl, { g = "Include", s = pos + 2, e = pos + 2 + #ptitle })
+    pos = pos + #pub_text
+
+    -- abstract
+    local abstract = v.abstract or "No abstract available."
+    local txt = table.concat(parts) .. "\n\n" .. abstract .. "\n"
+
     return txt, hl
 end
 
@@ -93,28 +115,48 @@ M.refs = function(key, cb)
     local mtchs = get_match(key)
     local references = {}
 
-    local awidth = 2
-    local awlim = vim.o.columns - 140
-    if awlim < 20 then awlim = 20 end
-    if awlim > 60 then awlim = 60 end
+    -- Calculate column widths
+    local title_width = 50  -- Title width
+    local year_width = 4  -- Year width
+    local author_width = 15  -- Author width
+    local org_width = 10  -- Organization width
+    local pub_width = 15  -- Publication width
+
     for _, v in pairs(mtchs) do
-        if #v.alastnm > awidth then awidth = #v.alastnm end
+        -- Get base publication title
+        local pub_base = v.publicationTitle
+            or v.bookTitle
+            or v.proceedingsTitle
+            or v.conferenceName
+            or v.programTitle
+            or v.blogTitle
+            or v.code
+            or v.dictionaryTitle
+            or v.encyclopediaTitle
+            or v.forumTitle
+            or v.websiteTitle
+            or v.seriesTitle
+            or ""
+
+        -- Build display string with PublicationNote for list view
+        local pub_display = pub_base
+        if v.publicationnote and v.publicationnote ~= "" then
+            pub_display = pub_display .. " (" .. v.publicationnote .. ")"
+        end
+
+        local author_len = #(v.alastnm or "")
+        local org_len = #(v.organization or "")
+        local pub_len = #pub_display
+
+        if author_len > author_width then author_width = author_len end
+        if org_len > org_width then org_width = org_len end
+        if pub_len > pub_width then pub_width = pub_len end
+
         table.insert(references, {
-            display = v.alastnm .. " " .. v.year .. " " .. v.title,
+            display = (v.title or "") .. " " .. (v.year or "") .. " " .. (v.alastnm or "") .. " " .. (v.organization or "") .. " " .. pub_display,
             etype = v.etype,
             sort_key = v[config.sort_key] or "0000-00-00 0000",
-            publicationTitle = v.publicationTitle
-                or v.bookTitle
-                or v.proceedingsTitle
-                or v.conferenceName
-                or v.programTitle
-                or v.blogTitle
-                or v.code
-                or v.dictionaryTitle
-                or v.encyclopediaTitle
-                or v.forumTitle
-                or v.websiteTitle
-                or v.seriesTitle,
+            publicationTitle = pub_base,  -- Store base without note for preview
             author = v.author
                 or v.artist
                 or v.performer
@@ -131,16 +173,25 @@ M.refs = function(key, cb)
                 or v.recipient
                 or v.editor
                 or v.seriesEditor
-                or v.translator,
-            alastnm = v.alastnm,
-            year = v.year,
-            title = v.title,
-            abstract = v.abstractNote,
-            key = v.zotkey,
-            cite = v.citekey,
+                or v.translator
+                or {},
+            alastnm = v.alastnm or "",
+            year = v.year or "",
+            title = v.title or "",
+            abstract = v.abstractNote or "",
+            key = v.zotkey or "",
+            cite = v.citekey or "",
+            abbreviation = v.abbreviation or "",
+            organization = v.organization or "",
+            publicationnote = v.publicationnote or "",
         })
     end
-    if awidth > awlim then awidth = awlim end
+
+    -- Apply width limits
+    if author_width > 30 then author_width = 30 end
+    if org_width > 20 then org_width = 20 end
+    if pub_width > 30 then pub_width = 30 end
+
     table.sort(references, function(a, b) return (a.sort_key > b.sort_key) end)
 
     pickers
@@ -153,18 +204,27 @@ M.refs = function(key, cb)
                     local displayer = entry_display.create({
                         separator = " ",
                         items = {
-                            { width = awidth }, -- Author
-                            { width = 4 }, -- Year
-                            { remaining = true }, -- Title
+                            { width = title_width }, -- Title
+                            { width = year_width }, -- Year
+                            { width = author_width }, -- Author
+                            { width = org_width }, -- Organization
+                            { remaining = true }, -- Publication
                         },
                     })
                     return {
                         value = entry,
                         display = function(e)
+                            -- Build publication display with note if present
+                            local pub_text = e.value.publicationTitle or ""
+                            if e.value.publicationnote and e.value.publicationnote ~= "" then
+                                pub_text = pub_text .. " (" .. e.value.publicationnote .. ")"
+                            end
                             return displayer({
-                                { e.value.alastnm, "Identifier" },
-                                { e.value.year, "Number" },
-                                { e.value.title, "Title" },
+                                { e.value.title or "", "Title" },
+                                { e.value.year or "", "Number" },
+                                { e.value.alastnm or "", "Identifier" },
+                                { e.value.organization or "", "Comment" },
+                                { pub_text, "Include" },
                             })
                         end,
                         ordinal = entry.display,

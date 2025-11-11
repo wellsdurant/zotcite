@@ -95,31 +95,61 @@ end
 ---@return table | nil
 local hover = function(lnum, char)
     local line = vim.api.nvim_buf_get_lines(0, lnum, lnum + 1, true)[1]
+    local zkey = nil
+    local range_start = nil
+    local range_end = nil
 
-    -- Find zotero key
-    local k = char
-    local pre = line:sub(1, k):match(".*@(.*)")
-    if not pre then return end
-    local pos = line:sub(k + 1, -1):match("^(%S*).*")
-    if not pos then return end
-    local subline = pre .. pos
-    local zkey = subline:match(
-        "^([0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z])"
-    )
+    -- First try to find in new markdown link format: [text](zotero://select/library/items/XXXXXXXX)
+    local link_start = 1
+    while link_start do
+        local s, e = line:find("%[.-%]%(zotero://select/library/items/([0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z])%)", link_start)
+        if s and e and char >= s - 1 and char <= e then
+            -- Cursor is within this markdown link
+            zkey = line:match("%[.-%]%(zotero://select/library/items/([0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z])%)", s)
+            range_start = s - 1
+            range_end = e
+            break
+        end
+        if not s then break end
+        link_start = e + 1
+    end
+
+    -- Fallback: try old format with @ symbol
+    if not zkey then
+        local k = char
+        local pre = line:sub(1, k):match(".*@(.*)")
+        if pre then
+            local pos = line:sub(k + 1, -1):match("^(%S*).*")
+            if pos then
+                local subline = pre .. pos
+                zkey = subline:match(
+                    "^([0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z])"
+                )
+                if zkey then
+                    local i, j = line:find(zkey .. "[%w%-0-9]*")
+                    if i then
+                        range_start = i - 1
+                        range_end = j
+                    end
+                end
+            end
+        end
+    end
+
     if not zkey then return end
     local res = resolve(zkey)
     if not res then return end
-    local i, j = line:find(zkey .. "[%w%-0-9]*")
-    if i then
+
+    if range_start and range_end then
         return {
             range = {
                 start = {
                     line = lnum,
-                    character = i - 1,
+                    character = range_start,
                 },
                 ["end"] = {
                     line = lnum,
-                    character = j,
+                    character = range_end,
                 },
             },
             contents = res,

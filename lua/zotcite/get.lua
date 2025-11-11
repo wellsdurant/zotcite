@@ -109,6 +109,22 @@ end
 
 local citation_key_hl = function(line, pos)
     pos = pos + 1
+
+    -- First, try to extract from new markdown link format: [text](zotero://select/library/items/XXXXXXXX)
+    -- Find the markdown link containing the cursor position
+    local link_start = 1
+    while link_start do
+        local s, e = line:find("%[.-%]%(zotero://select/library/items/([0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z])%)", link_start)
+        if s and e and pos >= s and pos <= e then
+            -- Cursor is within this markdown link, extract the 8-char key
+            local key = line:match("%[.-%]%(zotero://select/library/items/([0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z])%)", s)
+            if key and #key == 8 then return key end
+        end
+        if not s then break end
+        link_start = e + 1
+    end
+
+    -- Fallback: try old format with @ symbol (for backward compatibility)
     if line:sub(pos, pos) == "@" then pos = pos + 1 end
     local i = pos
     local k = line:sub(i, i)
@@ -184,7 +200,15 @@ local finish_citation = function(ref)
     if config.bib_and_vt[vim.o.filetype] then
         cite = ref.value.key
     else
-        cite = "@" .. ref.value.key .. "-" .. ref.value.cite
+        -- Check if cite value is empty or just whitespace
+        local cite_text = ref.value.cite
+        if cite_text == nil or cite_text:match("^%s*$") then
+            -- Fallback: use title (year)
+            local title = ref.value.title or "Untitled"
+            local year = ref.value.year or ""
+            cite_text = year ~= "" and (title .. " (" .. year .. ")") or title
+        end
+        cite = "[" .. cite_text .. "](zotero://select/library/items/" .. ref.value.key .. ")"
     end
     vim.api.nvim_buf_set_text(
         0,

@@ -17,14 +17,14 @@ local vt_citation = function(ns, i, s, e, a)
 end
 
 local vt_citations_md = function(ac, ns, lines)
-    local kp = "@[0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z]"
+    local kp = "%[.-%]%(zotero://select/library/items/([0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z])%)"
     local a = ""
     for k, v in pairs(lines) do
         local i = 1
         while true do
-            local s, e = v:find(kp, i)
+            local s, e, key = v:find(kp, i)
             if not s or not e then break end
-            a = ac[v:sub(s + 1, e)]
+            a = ac[key]
             vt_citation(ns, k, s, e, a)
             i = e + 1
         end
@@ -87,48 +87,20 @@ end
 local hl_zotkeys = function()
     local ns = vim.api.nvim_create_namespace("ZCitation")
     vim.api.nvim_buf_clear_namespace(0, ns, 0, -1)
-    local kp = "@[0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][%-%#]"
-    local yp = "^%S*[0-9][0-9][0-9][0-9]"
-    if vim.env.ZCitationTemplate and vim.env.ZCitationTemplate:find("year") then
-        yp = "^%S*[0-9][0-9]"
-    end
+    local kp = "%[(.-)%]%(zotero://select/library/items/[0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z]%)"
     local lines = vim.api.nvim_buf_get_lines(0, 0, -1, true)
     local set_m = vim.api.nvim_buf_set_extmark
     for k, v in pairs(lines) do
         local i = 1
         while true do
-            local s, e = v:find(kp, i)
+            local s, e, link_text = v:find(kp, i)
             if not s or not e then break end
-            set_m(0, ns, k - 1, s - 1, { end_col = e, hl_group = "Ignore", conceal = "" })
-            local _, y = v:find(yp, e)
-            if y then
-                set_m(0, ns, k - 1, e, { end_col = y, hl_group = "Identifier" })
-                set_m(
-                    0,
-                    ns,
-                    k - 1,
-                    y - 5,
-                    { end_col = y - 4, hl_group = "Identifier", conceal = "_" }
-                )
-                e = e + 1
-                local substr = v:sub(e, y)
-                local j = 1
-                while true do
-                    local _, m = substr:find("+", j) -- old delimiter
-                    if not m then
-                        _, m = substr:find("%-", j)
-                    end
-                    if not m then break end
-                    set_m(
-                        0,
-                        ns,
-                        k - 1,
-                        m + e - 2,
-                        { end_col = m + e - 1, hl_group = "Identifier", conceal = "_" }
-                    )
-                    j = m + 1
-                end
-            end
+            -- Find where the link text ends and URL starts
+            local bracket_end = s + #link_text
+            -- Highlight the link text
+            set_m(0, ns, k - 1, s - 1, { end_col = bracket_end + 1, hl_group = "Identifier" })
+            -- Conceal the URL part: ](zotero://...)
+            set_m(0, ns, k - 1, bracket_end + 1, { end_col = e, hl_group = "Ignore", conceal = "" })
             i = e + 1
         end
     end

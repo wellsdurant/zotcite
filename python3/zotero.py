@@ -213,7 +213,7 @@ class ZoteroEntries:
         if os.getenv('ZCitationTemplate') is not None:
             self._cite = str(os.getenv('ZCitationTemplate'))
         else:
-            self._cite = '{Authors}-{Year}'
+            self._cite = '{Abbreviation}'
 
         # Title words to be ignored
         if os.getenv('ZBannedWords') is not None:
@@ -482,6 +482,33 @@ class ZoteroEntries:
                 else:
                     self._e[pId]['attachment'] = [pKey + ':' + aPath]
 
+    def _parse_extra_fields(self, item_id):
+        """Parse key-value pairs from the extra field.
+
+        Zotero's extra field often contains structured data like:
+        Custom Field: value
+        Another Field: another value
+
+        This method parses these into a dictionary for use in citation templates.
+        Field names are converted to placeholder-friendly format (e.g., "Custom Field" → "customfield")
+        """
+        extra_fields = {}
+        if 'extra' in self._e[item_id]:
+            extra_content = self._e[item_id]['extra']
+            # Split by lines and parse key-value pairs
+            for line in extra_content.split('\n'):
+                # Match pattern "Key: Value"
+                match = re.match(r'^([^:]+):\s*(.+)$', line.strip())
+                if match:
+                    key = match.group(1).strip()
+                    value = match.group(2).strip()
+                    # Convert key to a valid template placeholder name
+                    # Remove all non-alphanumeric characters and spaces
+                    key_clean = re.sub(r'[^a-zA-Z0-9]', '', key)
+                    if key_clean:  # Only add if key is not empty after cleaning
+                        extra_fields[key_clean] = value
+        return extra_fields
+
     def _calculate_citekeys(self):
         ptrn = '^(' + ' |'.join(self._bwords) + ' )'
         for k in self._e:
@@ -528,9 +555,60 @@ class ZoteroEntries:
             key = key.replace('{Year}', year, 1)
             key = key.replace('{title}', titlew.lower(), 1)
             key = key.replace('{Title}', titlew.title(), 1)
-            key = key.replace(' ', '')
-            key = key.replace("'", '')
-            key = key.replace("’", '')
+
+            # Parse and replace extra field placeholders
+            extra_fields = self._parse_extra_fields(k)
+
+            # Create or get Abbreviation field
+            # Check if Abbreviation is defined in extra fields (case-insensitive)
+            abbreviation = ""
+            for field_name, field_value in extra_fields.items():
+                if field_name.lower() == 'abbreviation':
+                    abbreviation = field_value
+                    break
+
+            # Store abbreviation in the entry for later use
+            self._e[k]['abbreviation'] = abbreviation
+
+            # Create or get Organization field
+            # Check if Organization is defined in extra fields (case-insensitive)
+            organization = ""
+            for field_name, field_value in extra_fields.items():
+                if field_name.lower() == 'organization':
+                    organization = field_value
+                    break
+
+            # Store organization in the entry for later use
+            self._e[k]['organization'] = organization
+
+            # Create or get PublicationNote field
+            # Check if PublicationNote is defined in extra fields (case-insensitive)
+            publicationnote = ""
+            for field_name, field_value in extra_fields.items():
+                if field_name.lower() == 'publicationnote':
+                    publicationnote = field_value
+                    break
+
+            # Store publicationnote in the entry for later use
+            self._e[k]['publicationnote'] = publicationnote
+
+            # Replace abbreviation placeholders in citation key (preserve case and spaces)
+            key = key.replace('{abbreviation}', abbreviation)
+            key = key.replace('{Abbreviation}', abbreviation)
+
+            # Replace other extra field placeholders (preserve case and spaces)
+            for field_name, field_value in extra_fields.items():
+                # Skip abbreviation as we already handled it
+                if field_name.lower() == 'abbreviation':
+                    continue
+                # Use the original value preserving case and spaces
+                if field_name:
+                    key = key.replace('{' + field_name.lower() + '}', field_value)
+                    # Title case: capitalize first letter
+                    title_case_name = field_name[0].upper() + field_name[1:] if len(field_name) > 1 else field_name.upper()
+                    key = key.replace('{' + title_case_name + '}', field_value)
+
+            # Note: No longer removing spaces and quotes to preserve formatting from extra fields
             self._e[k]['citekey'] = key
 
 
@@ -897,7 +975,7 @@ class ZoteroEntries:
         """
 
         if id in self._e.keys():
-            return '@' + self._e[id]['zotkey'] + '-' + self._e[id]['citekey']
+            return '[' + self._e[id]['citekey'] + '](zotero://select/library/items/' + self._e[id]['zotkey'] + ')'
         return "IdNotFound"
 
     def GetAnnotations(self, key, offset, clean, md):

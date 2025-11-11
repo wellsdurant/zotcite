@@ -5,21 +5,34 @@ local M = {}
 local zwarn = require("zotcite").zwarn
 
 M.add_yaml_refs = function()
-    local bigstr = vim.fn.join(vim.api.nvim_buf_get_lines(0, 0, -1, true))
-    local rlist = vim.fn.uniq(vim.fn.sort(vim.fn.split(bigstr)))
-    if rlist and type(rlist) == "table" and #rlist > 0 then
-        local list2 = {}
-        for _, v in pairs(rlist) do
-            if v:find("^@.*[%-#]") then table.insert(list2, v) end
+    local lines = vim.api.nvim_buf_get_lines(0, 0, -1, true)
+    local zotkeys = {}
+
+    -- Extract zotero keys from both old and new formats
+    for _, line in ipairs(lines) do
+        -- New format: [text](zotero://select/library/items/XXXXXXXX)
+        for key in line:gmatch("%[.-%]%(zotero://select/library/items/([0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z])%)") do
+            if not vim.tbl_contains(zotkeys, key) then
+                table.insert(zotkeys, key)
+            end
         end
-        if #list2 > 0 then
-            local refs = vim.fn.py3eval(
-                "ZotCite.GetYamlRefs(['" .. table.concat(list2, "', '") .. "'])"
-            )
-            local rlines = vim.fn.split(refs, "\n")
-            local lnum = vim.api.nvim_win_get_cursor(0)[1]
-            vim.api.nvim_buf_set_lines(0, lnum, lnum, true, rlines)
+
+        -- Old format: @XXXXXXXX-... (for backward compatibility)
+        for key in line:gmatch("@([0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z][0-9A-Z])[%-#]") do
+            if not vim.tbl_contains(zotkeys, key) then
+                table.insert(zotkeys, key)
+            end
         end
+    end
+
+    if #zotkeys > 0 then
+        table.sort(zotkeys)
+        local refs = vim.fn.py3eval(
+            "ZotCite.GetYamlRefs(['" .. table.concat(zotkeys, "', '") .. "'])"
+        )
+        local rlines = vim.fn.split(refs, "\n")
+        local lnum = vim.api.nvim_win_get_cursor(0)[1]
+        vim.api.nvim_buf_set_lines(0, lnum, lnum, true, rlines)
     end
 end
 
