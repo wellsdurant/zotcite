@@ -86,6 +86,7 @@ local config = {
 }
 
 local did_global_init = false
+local did_comment_override = false
 local first_buf
 
 local zwarn = require("zotcite").zwarn
@@ -133,6 +134,27 @@ local update_config = function()
     if config.register_treesitter then
         vim.treesitter.language.register("markdown", { "quarto", "rmd" })
     end
+
+    -- Override vim.filetype.get_option to fix markdown_inline commentstring
+    if not did_comment_override then
+        local original_get_option = vim.filetype.get_option
+
+        vim.filetype.get_option = function(filetype, option)
+            if option == "commentstring" and filetype == "markdown_inline" then
+                return "<!-- %s -->"
+            end
+            return original_get_option(filetype, option)
+        end
+        did_comment_override = true
+    end
+
+    -- Set commentstring for markdown buffers
+    vim.api.nvim_create_autocmd("FileType", {
+        pattern = "markdown",
+        callback = function(ev)
+            vim.bo[ev.buf].commentstring = "<!-- %s -->"
+        end,
+    })
 end
 
 M.has_buffer = function(bufnr)
@@ -329,6 +351,7 @@ M.init = function()
     )
     vim.o.conceallevel = config.conceallevel
     vim.treesitter.start(bnr)
+
     if config.bib_and_vt[vim.o.filetype] then
         vim.api.nvim_create_autocmd(
             "InsertLeave",
